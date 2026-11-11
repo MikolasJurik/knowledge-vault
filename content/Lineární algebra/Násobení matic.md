@@ -1,0 +1,1 @@
+Při násobení dvou matic násobíme řádky první matice se sloupci druhé matice.
