@@ -34,7 +34,7 @@ $$p(\theta \mid Y_T) = \frac{p(Y_T \mid \theta) \, p(\theta)}{p(Y_T)} \propto \u
 ## 3. Propojení modelu s daty (Measurement)
 Data a proměnné modelu musí být ve **shodné transformaci i škále**:
 * Model počítá logaritmické odchylky od steady-state: $y_t = \log(Y_t) - \log(Y_{ss})$.
-* Je-li v datech stacionární tempo růstu (první diference), měřicí rovnice musí být:
+* Je-li v datech stacionární tempo růstu (první diference), [[Stavová a měřící rovnice |měřicí rovnice]] musí být:
   $$dy_t = y_t - y_{t-1} = \log(Y_t) - \log(Y_{t-1})$$
 
 ---
@@ -105,3 +105,109 @@ Grafy hustot (šedá = Prior, černá = Posterior, zelená čárkovaná = Mód):
 | **Konvergence**           | Brooks-Gelman            | Červená a modrá linie splývají a netrendují.                                                             |
 | **Informační přínos dat** | Prior vs. Posterior graf | Zúžení a posun posterioru vůči prioru.                                                                   |
 | **Dopad šoků**            | Bayesian IRF             | Znaménko, vrchol, perzistence a šířka HPD pásů.                                                          |
+__________________________________________________________________
+----------------------------------
+
+
+---
+
+# Bayesian Estimation of DSGE Models
+
+Tags: #macroeconomics #dsge #dynare #bayesian #econometrics
+
+## 1. Kalibrace vs. Odhad (Motivace)
+* **Kalibrace**: Fixní parametry $\theta$ převzaté z literatury/teorie. *Problém:* Různé hodnoty (např. persistence šoku $\rho = 0.95$ vs. $0.80$) mění dynamiku, ale teorie nerozhodne, která lépe odpovídá realitě.
+* **Bayesovský odhad**: Kombinuje data (věrohodnost) s expertní informací/teorií (apriorní rozdělení).
+* **Identifikace**: Odhad nezaručuje identifikovatelnost – různé kombinace parametrů mohou generovat stejnou dynamiku pozorovaných veličin.
+
+---
+
+## 2. Bayesovský rámec v DSGE
+$$p(\theta \mid Y^T) \propto p(Y^T \mid \theta) \, p(\theta)$$
+* **Věrohodnost $p(Y^T \mid \theta)$**: U lineárních DSGE modelů s Gaussovskými šoky se vyhodnocuje pomocí **Kalmanova filtru** ze stavové reprezentace.
+* **Apriorní rozdělení $p(\theta)$**: Volí se dle ekonomických omezení:
+  * `BETA_PDF`: interval $(0, 1)$ – např. diskontní faktor $\beta$, persistence $\rho$, míra amortizace $\delta$.
+  * `INV_GAMMA_PDF`: pouze kladné hodnoty – směrodatné odchylky šoků $\sigma_e$.
+  * `NORMAL_PDF` / `UNIFORM_PDF`: např. podíly $\alpha$, váhy domácností $\omega$.
+* **Posterior Mode vs. Mean**:
+  * **Modus**: $\arg\max [\log p(Y^T \mid \theta) + \log p(\theta)]$ (optimalizační bod před MCMC).
+  * **Střední hodnota (Mean)**: Průměr z MCMC vzorků.
+  * *Rozdíl:* Pokud je posterior sešikmený nebo naráží na hranici podpory (např. $\beta \to 1$), modus a průměr se budou výrazně lišit.
+* **90% HPD Interval**: Nejužší interval obsahující 90 % posteriorní pravděpodobnosti.
+
+---
+
+## 3. Data a Měřicí rovnice (Measurement Equation)
+
+> [!warning] Kritický krok: Konzistence jednotek
+> Model počítá odchylky od steady-state ($y_t = \log Y_t - \log Y_{ss}$), ale data jsou často v diferencích (růst).
+
+* **Měřicí rovnice**:
+  $$dy_t = y_t - y_{t-1} = \Delta \log Y_t$$
+* **Stochastická singularita**: Pokud je počet pozorovaných veličin větší než počet strukturních šoků, model zkolabuje (kovarianční matice je singulární). V příkladu: 1 šok ($e_t$) $\to$ 1 pozorovaná veličina ($dy$).
+
+---
+
+## 4. Implementace v Dynare (.mod soubor)
+
+```matlab
+// 1. Deklarace pozorované proměnné
+varobs dy;
+
+// 2. Apriorní rozdělení (jméno, distribuce, prior mean, prior s.d.)
+estimated_params;
+    alpha, NORMAL_PDF,    0.35, 0.15;
+    beta,  BETA_PDF,      0.97, 0.03;
+    delta, BETA_PDF,      0.06, 0.10;
+    omega, UNIFORM_PDF,   0.50, 0.20;
+    rho,   BETA_PDF,      0.50, 0.20;
+    stderr e, INV_GAMMA_PDF, 0.10, 2;
+end;
+
+// 3. Konfigurace odhadu
+estimation(
+    datafile = DATASET,      // Soubor s daty (.mat nebo .m)
+    first_obs = 101, nobs = 80, // Výběr vzorku (např. 20 let kvartálních dat)
+    mode_compute = 6,        // Monte Carlo optimalizátor modu
+    mode_check,              // Vykreslí profily kolem modu
+    mh_replic = 50000,       // Počet MCMC iterací na řetězec
+    mh_nblocks = 2,          // Počet nezávislých řetězců
+    mh_jscale = 0.4,         // Měřítko skoků (ovlivňuje acceptance rate)
+    mh_drop = 0.4,           // Burn-in (odstraní prvních 40 % tahů)
+    bayesian_irf, irf = 40   // Bayesovské IRF na 40 období
+);
+```
+
+---
+
+## 5. Vyhodnocení a diagnostika výsledků
+
+1. **Sedí transformace dat?** (Např. demeaning, kvartální růst $\times 100$).
+2. **Skončila optimalizace modu v regulérním bodě?** (Kontrola `mode_check`, zda parametry nesedí na hranicích).
+3. **Konvergovaly řetězce?** (Brooks-Gelman stabilní, acceptance rate ~30 %).
+4. **Co říkají data vs. prior?** (Které parametry se pohly a které jen kopírují prior).
+5. **Dávají IRF ekonomický smysl?** (Znaménka, persistence, návrat ke steady-state).
+### A. Posterior Mode & `mode_check`
+* **Blanchard-Kahn condition**: Řešitelnost a stabilita systému (ověřuje se jako první; neznamená však identifikovatelnost).
+* **`mode_check` grafy**: Zobrazují řez log-posterioru při změně jednoho parametru (ostatní fixní).
+  * *Ideál:* Hladký parabolický kopec s vrcholem v nalezeném modu.
+  * *Varování:* Plochý profil (neidentifikovatelnost), skokové/zubaté funkce, vrchol na hranici intervalu (např. $\beta = 1.0$).
+
+### B. MCMC Konvergence
+* **Acceptance rate**: Cílit zhruba na **25–35 %** (reguluje se přes `mh_jscale`).
+* **Inefficiency factors**: Měří autokorelaci v řetězci. Vysoké hodnoty = efektivní velikost vzorku je mnohem menší než počet iterací.
+* **Brooks-Gelman diagnostika** (Univariate & Multivariate):
+  * Porovnává variabilitu uvnitř řetězců (*within-chain*) a mezi řetězci (*between-chain*).
+  * **Červená a modrá křivka** se musí v čase **přiblížit k sobě a vodorovně stabilizovat**. Přetrvávající drift = nutno běžet delší řetězec.
+
+### C. Porovnání Prior vs. Posterior
+* **Posun polohy + zúžení rozptylu**: Data nesou silnou informaci (posterior se „vzdálil“ od prioru a zpřesnil).
+* **Překryv (Posterior $\approx$ Prior)**: Data neobsahují dostatek informace o daném parametru (slabá identifikace, posterior je tažen apriorní volbou).
+* *Poznámka:* Samotný vizuální překryv není formální test neidentifikovatelnosti, ale silné varování.
+
+### D. Bayesovské IRF (Impulse Response Functions)
+* Zobrazují střední odezvy a **konvoluci nejistoty parametrů i šoků** (kolem mediánu jsou HPD intervaly).
+* **Hladina vs. Změna**: Pozor na interpretaci! Růst ($dy$) se může vrátit k nule, zatímco úroveň výstupu ($y$) zůstává trvale vychýlená nad steady-state.
+
+
+
