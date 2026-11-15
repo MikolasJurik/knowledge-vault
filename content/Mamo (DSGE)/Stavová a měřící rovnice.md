@@ -1,7 +1,7 @@
 Tags: #econometrics #dsge #state-space #kalman-filter
 
-> [!abstract] Podstata v jedné větě
-> **Měřicí rovnice je most mezi teorií a realitou** – propojuje nepozorované (latentní/modelové) veličiny se skutečnými pozorovanými daty.
+
+Měřící rovnice = propojuje nepozorované (latentní/modelové) veličiny se skutečnými pozorovanými daty.
 
 ---
 
