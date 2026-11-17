@@ -140,7 +140,7 @@ planes %>%
 
 ---
 
-### 📊 Agregace: `summarise()` (nebo `summarize()`)
+### 📊 Agregace: `summarise()` 
 
 Smrskne tabulku na **1 řádek** (nebo 1 řádek za každou skupinu při použití `group_by()`).
 
